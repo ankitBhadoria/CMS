@@ -1,16 +1,25 @@
+import datetime
 from django.shortcuts import render
 from rest_framework.response import Response
-from rest_framework.decorators import api_view,permission_classes
+from rest_framework.decorators import api_view,permission_classes,action
 from rest_framework.permissions import BasePermission
 # from rest_framework.views import APIView
 from rest_framework import status
 from rest_framework import viewsets
 from rest_framework.permissions import IsAuthenticated
-from .serializers import UserProfileSerializer, UserSerializer,PracticeSerializer,CampaignSerializer,MessageSerializer,AdminCampaignSerializer
-from .models import UserProfile,Practice,Campaign,Message,AdminCampaign,engine
+
+# from .tasks import create_message_task
+from .serializers import UserProfileSerializer, UserSerializer,PracticeSerializer,CampaignSerializer,MessageSerializer,AdminCampaignSerializer,UserCampaignSequenceSerializer
+from .models import UserProfile,Practice,Campaign,Message,AdminCampaign,UserCampaignSequence,engine
 from sqlalchemy.orm import sessionmaker
 from django.contrib.auth.models import User
 from sqlalchemy.orm.exc import NoResultFound
+from .utils import send_custom_email
+from django.utils.timezone import make_aware
+import logging
+
+logger = logging.getLogger(__name__)
+
 # from django.contrib.auth import authenticate, login, logout
 
 
@@ -368,17 +377,134 @@ class MessageViewSet(viewsets.ViewSet):
 
         if serializer.is_valid():
             validated_data = serializer.validated_data
+            userprofile_id = validated_data.get("userprofile_id")
+            user = User.objects.filter(id=userprofile_id).first()
+            if not user or not user.email:
+                return Response({"error": "User email not found"}, status=status.HTTP_400_BAD_REQUEST)
+
+            recipient_email = [user.email]  # Convert to list for sending mail
 
             try:
                 message = Message(**validated_data)
                 session.add(message)
                 session.commit()
-                return Response({'message': 'Message created successfully!'}, status=status.HTTP_201_CREATED)
+                # Send email
+                subject = "New Campaign Notification"
+                # Extract only required fields
+                name = validated_data.get("name", "N/A")
+                campaign_type = validated_data.get("type", "N/A")
+                description = validated_data.get("description", "N/A")
+                status_value = validated_data.get("status", "N/A")
+
+                # Format email content
+                email_body = (
+                    f"New Campaign Notification\n\n"
+                    f"Name: {name}\n"
+                    f"Type: {campaign_type}\n"
+                    f"Description: {description}\n"
+                    f"Status: {status_value}"
+                )
+                send_custom_email(subject, email_body, recipient_email)
+                
+                return Response({"message": "Message created and email sent successfully!"}, status=status.HTTP_201_CREATED)
             except Exception as e:
                 session.rollback()
                 return Response(f"Error: {e}", status=status.HTTP_400_BAD_REQUEST)
         else:
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+    # @action(detail=False, methods=["post"], url_path="instant")
+    # def create_instant(self, request, *args, **kwargs):
+    #     """Instantly creates a message and sends an email."""
+    #     serializer = MessageSerializer(data=request.data)
+
+    #     if serializer.is_valid():
+    #         # print(serializer.validated_data)
+    #         validated_data = serializer.validated_data
+    #         session = Session()
+
+    #         try:
+    #             userprofile_id = validated_data.get("userprofile_id")
+    #             user = session.query(User).filter_by(id=userprofile_id).first()
+
+    #             if not user or not user.email:
+    #                 return Response({"error": "User email not found"}, status=status.HTTP_400_BAD_REQUEST)
+
+    #             recipient_email = [user.email]  
+
+    #             # Create message instantly
+    #             message = Message(**validated_data)
+    #             session.add(message)
+    #             session.commit()
+
+    #             # Send email
+    #             from django.core.mail import send_mail
+    #             from django.conf import settings
+
+    #             subject = "New Campaign Notification"
+    #             email_body = (
+    #                 f"New Campaign Notification\n\n"
+    #                 f"Name: {validated_data.get('name', 'N/A')}\n"
+    #                 f"Type: {validated_data.get('type', 'N/A')}\n"
+    #                 f"Description: {validated_data.get('description', 'N/A')}\n"
+    #                 f"Status: {validated_data.get('status', 'N/A')}"
+    #             )
+
+    #             send_mail(
+    #                 subject,
+    #                 email_body,
+    #                 settings.DEFAULT_FROM_EMAIL,
+    #                 recipient_email,
+    #                 fail_silently=False,
+    #             )
+        
+
+    #             return Response({"message": "Message created and email sent successfully!"}, status=status.HTTP_201_CREATED)
+
+    #         except Exception as e:
+    #             session.rollback()
+    #             return Response(f"Error: {e}", status=status.HTTP_400_BAD_REQUEST)
+
+    #         finally:
+    #             session.close()
+
+    #     else:
+    #         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    # @action(detail=False, methods=["post"], url_path="schedule")
+    # def create_scheduled(self, request, *args, **kwargs):
+    #     """Schedules message creation and email sending at user-specified time."""
+    #     # print(request.data)
+    #     serializer = MessageSerializer(data=request.data)
+
+    #     if serializer.is_valid():
+    #         validated_data = serializer.validated_data
+    #         scheduled_time = request.data.get("scheduled_time")
+
+    #         if not scheduled_time:
+    #             return Response({"error": "Scheduled time is required"}, status=status.HTTP_400_BAD_REQUEST)
+
+    #         # Convert scheduled_time to timezone-aware datetime
+    #         scheduled_time = make_aware(scheduled_time)
+
+    #         # Ensure the scheduled time is in the future
+    #         if scheduled_time <= datetime.now():
+    #             return Response({"error": "Scheduled time must be in the future"}, status=status.HTTP_400_BAD_REQUEST)
+
+    #         # Schedule the task at user-defined time
+    #         create_message_task.apply_async(
+    #             args=[validated_data],
+    #             eta=scheduled_time  
+    #         )
+    #         # print(serializer.validated_data)
+
+    #         return Response(
+    #             {"message": f"Message scheduled successfully for {scheduled_time}"},
+    #             status=status.HTTP_202_ACCEPTED
+    #         )
+    #     else:
+    #         print('validation failed')
+    #         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     def update(self, request, pk=None, *args, **kwargs):
         """
@@ -420,3 +546,74 @@ class MessageViewSet(viewsets.ViewSet):
         except Exception as e:
             session.rollback()
             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        
+# class UserCampaignSequenceViewSet(viewsets.ViewSet):
+#     permission_classes = [IsAuthenticated]
+#     """ViewSet for creating UserCampaignSequence records"""
+
+#     def create(self, request):
+#         """Handles the creation of a UserCampaignSequence."""
+#         logger.info("Received request to create UserCampaignSequence: %s", request.data)
+#         request.data["created_by"]=request.user.id
+#         serializer = UserCampaignSequenceSerializer(data=request.data)
+#         serializer.is_valid()
+#         # for k,v in serializer:
+#         #     logger.info(f"key is {k} and value is {v}")
+#         logger.info(f"serializer {serializer}")
+#         if serializer.is_valid():
+#             # logger.info(f"the schedule status is {serializer["schedule_status"]}")
+#             validated_data = serializer.validated_data
+#             logger.debug("Validated data: %s", validated_data)
+
+#             try:
+#                 # Create a new UserCampaignSequence instance
+#                 logger.info("going in the fucntion.")
+#                 validated_data["schedule_status"]="scheduled"
+#                 new_sequence = UserCampaignSequence(**validated_data)
+#                 session.add(new_sequence)
+#                 session.commit()
+#                 logger.info("UserCampaignSequence created successfully: ID %s", new_sequence.id)
+#                 return Response({"message": "UserCampaignSequence created successfully!"}, status=status.HTTP_201_CREATED)
+#             except Exception as e:
+#                 session.rollback()  # Rollback in case of an error
+#                 logger.error("Error creating UserCampaignSequence: %s", str(e), exc_info=True)
+#                 return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+#             finally:
+#                 session.close()  # Close session
+#                 logger.debug("Database session closed.")
+#         print('serializer caused error')
+#         logger.warning("Invalid data received: %s", serializer.errors)
+#         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+class UserCampaignSequenceViewSet(viewsets.ViewSet):
+    permission_classes = [IsAuthenticated]
+    """ViewSet for creating UserCampaignSequence records"""
+
+    def create(self, request):
+        """Handles the creation of a UserCampaignSequence."""
+        request.data["created_by"] = request.user.id
+        serializer = UserCampaignSequenceSerializer(data=request.data)
+        
+        if serializer.is_valid():
+            validated_data = serializer.validated_data
+
+            try:
+                # Create a new UserCampaignSequence instance
+                validated_data["schedule_status"] = "scheduled"
+                session.rollback() 
+                sequence = UserCampaignSequence(**validated_data)
+                session.add(sequence)
+            
+                session.flush()  # Try flushing before committing
+
+                session.commit()
+                return Response({"message": "UserCampaignSequence created successfully!"}, status=status.HTTP_201_CREATED)
+            except Exception as e:
+                session.rollback()  # Rollback in case of an error
+                return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+            # finally:
+            #     session.close()  # Close session
+        else:
+            print('serizlizer not working')
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+

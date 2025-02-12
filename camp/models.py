@@ -58,6 +58,7 @@ class AdminCampaign(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     belongto = Column(Integer, ForeignKey('practice.id'))
+    # created_by = Column(Integer, ForeignKey('userprofile.id'), nullable=False)
     
 class Message(Base):
     __tablename__ = 'message'
@@ -69,6 +70,23 @@ class Message(Base):
     userprofile_id = Column(Integer, ForeignKey('userprofile.id'), nullable=False)
     seen = Column(Enum("yes", "no", name="seen_status"), nullable=False, default="no")
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+class UserCampaignSequence(Base):
+    __tablename__ = 'usercampaignsequence'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    # sa_campaign_id = Column(Integer, ForeignKey('campaign.id'), nullable=True)
+    # admin_campaign_id = Column(Integer, ForeignKey('admincampaign.id'), nullable=True)
+    type = Column(String(50), nullable=False)
+    name = Column(String(50), nullable=False)
+    description = Column(String, nullable=False)
+    status = Column(Enum("upcoming", "running", "expired", name="status"), nullable=False)
+    scheduled_date = Column(DateTime(timezone=True), nullable=False)
+    schedule_status = Column(String(50), nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    created_by = Column(Integer, nullable=False)
+    userprofile_id = Column(Integer, ForeignKey('userprofile.id'), nullable=False)
 
     
 

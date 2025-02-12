@@ -1,8 +1,11 @@
 # serializers.py
+import datetime
 from rest_framework import serializers
 from django.contrib.auth.models import User
-from .models import Campaign,UserProfile,Practice,Message,engine
+from .models import Campaign,UserProfile,Practice,Message,AdminCampaign,UserCampaignSequence,engine
 from sqlalchemy.orm import sessionmaker
+from django.utils import timezone
+import pytz
 # serializers.py
 
 Session = sessionmaker(bind=engine)
@@ -78,6 +81,7 @@ class MessageSerializer(serializers.Serializer):
     status = serializers.ChoiceField(choices=["upcoming", "running", "expired"])
     userprofile_id = serializers.IntegerField()
     seen = serializers.ChoiceField(choices=["yes", "no"], default="no")  # New field
+    # scheduled_time = serializers.DateTimeField(required=False)
 
     def validate_userprofile_id(self, value):
         """Validate if the provided userprofile_id exists in the database."""
@@ -94,6 +98,54 @@ class MessageSerializer(serializers.Serializer):
         userprofile_id = data.get('userprofile_id')
 
         existing_message = session.query(Message).filter_by(
+            type=type_, name=name, description=description, status=status, userprofile_id=userprofile_id
+        ).first()
+
+        if existing_message:
+            raise serializers.ValidationError(
+                "A message with this type, name, description, status, userprofile_id, and seen status already exists."
+            )
+
+        return data
+    
+class UserCampaignSequenceSerializer(serializers.Serializer):
+    # id = serializers.IntegerField(read_only=True)
+    type = serializers.CharField(max_length=50)
+    name = serializers.CharField(max_length=50)
+    description = serializers.CharField()
+    status = serializers.ChoiceField(choices=["upcoming", "running", "expired"])
+    scheduled_date = serializers.DateTimeField()
+    created_by = serializers.IntegerField()
+    userprofile_id = serializers.IntegerField()
+    
+    def validate_scheduled_date(self, value):
+    # """Ensure that the scheduled date is not in the past."""
+        now = timezone.now()  # Django's timezone-aware current datetime
+        if value < now:
+            raise serializers.ValidationError("Scheduled date cannot be in the past.")
+        return value
+
+    def validate_userprofile_id(self, value):
+        """Validate if the provided receivers_id exists in the database."""
+        if not session.query(UserProfile).filter_by(id=value).first():
+            raise serializers.ValidationError("The specified Receiver does not exist.")
+        return value
+    
+    # def validate_created_by(self, value):
+    #     """Validate if the provided created_by exists in the database."""
+    #     if not session.query(UserProfile).filter_by(id=value).first():
+    #         raise serializers.ValidationError("The specified sender does not exist.")
+    #     return value
+    
+    def validate(self, data):
+        """Check if a message with the same type, name, description, status, userprofile_id, and seen already exists."""
+        type_ = data.get('type')
+        name = data.get('name')
+        description = data.get('description')
+        status = data.get('status')
+        userprofile_id = data.get('userprofile_id')
+
+        existing_message = session.query(UserCampaignSequence).filter_by(
             type=type_, name=name, description=description, status=status, userprofile_id=userprofile_id
         ).first()
 

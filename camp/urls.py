@@ -1,6 +1,6 @@
 from django.urls import path,include
 from rest_framework.routers import DefaultRouter
-from .views import UserProfileViewSet,PracticeViewSet,CampaignViewSet,MessageViewSet,AdminCampaignViewSet
+from .views import UserProfileViewSet,PracticeViewSet,CampaignViewSet,MessageViewSet,AdminCampaignViewSet,UserCampaignSequenceViewSet
 from rest_framework_simplejwt.views import (
     TokenRefreshView,
 )
@@ -28,6 +28,7 @@ router.register(r'Practice', PracticeViewSet, basename='Practice')
 router.register(r'Campaign', CampaignViewSet, basename='Campaign')
 router.register(r'AdminCampaign', AdminCampaignViewSet, basename='AdminCampaign')
 router.register(r'Message', MessageViewSet, basename='Message')
+router.register(r'Messagescheduled', UserCampaignSequenceViewSet, basename='Messagescheduled')
 
 urlpatterns = [
     path('', include(router.urls)),
